@@ -21,7 +21,7 @@
     <h4>Referencias</h4>
     <div class="leyenda-item">
       <div class="leyenda-dot" style="background:#b22222"></div>
-      <span id="conteo">—</span>
+      <span>CCD</span>
     </div>
   </div>
   <div id="fuente">
@@ -32,11 +32,13 @@
 <!-- Panel selector -->
 <div id="panel">
   <button id="panel-close" title="Ocultar">×</button>
-  <label>Partido / Área</label>
-  <select id="select-partido">
-    <option value="">— seleccioná —</option>
+  <label>Zona</label>
+  <select id="select-zona">
+    <option value="">— todas —</option>
   </select>
-  <div id="conteo">—</div>
+  <label>Partido / Área <span id="hint-multi">(Ctrl+clic = varios)</span></label>
+  <select id="select-partido" multiple size="8"></select>
+  <div id="panel-conteo">—</div>
 </div>
 
 <button id="panel-toggle" title="Mostrar selector">☰</button>

@@ -5,12 +5,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-// ── Extraer provincia y partido del registro ──────────────────────────────
-function extractProvincia(zona) {
-  const m = zona.match(/provincia de (.+)$/i);
-  if (m) return m[1].trim();
-  const m2 = zona.match(/·\s*(.+)$/);
-  return m2 ? m2[1].trim() : zona.trim();
+// ── Extraer zona y partido del registro ───────────────────────────────────
+function extractZona(zonaStr) {
+  const m = zonaStr.match(/^(Zona \d+)/i);
+  return m ? m[1] : zonaStr.split('·')[0].trim();
 }
 
 function extractPartido(area) {
@@ -18,32 +16,49 @@ function extractPartido(area) {
   return m ? m[1].trim() : area.trim();
 }
 
-// ── Construir índice: { "BUENOS AIRES": [ {partido, centros[]}, ... ] } ──
+// ── Construir índice: { "Zona 1": { "CAPITAL FEDERAL": centros[] } } ──────
 const indice = {};
 DB_DATA.centros.forEach(centro => {
   if (!centro.lugares || centro.lugares.length === 0) return;
-  const provincia = extractProvincia(centro.zona);
-  const partido   = extractPartido(centro.area);
-  if (!indice[provincia]) indice[provincia] = {};
-  if (!indice[provincia][partido]) indice[provincia][partido] = [];
-  indice[provincia][partido].push(centro);
+  const zona    = extractZona(centro.zona);
+  const partido = extractPartido(centro.area);
+  if (!indice[zona]) indice[zona] = {};
+  if (!indice[zona][partido]) indice[zona][partido] = [];
+  indice[zona][partido].push(centro);
 });
 
-// ── Poblar el <select> ────────────────────────────────────────────────────
-const select = document.getElementById('select-partido');
-const subtitulo = document.getElementById('subtitulo');
+// ── Poblar selects ────────────────────────────────────────────────────────
+const selectZona    = document.getElementById('select-zona');
+const selectPartido = document.getElementById('select-partido');
+const subtitulo     = document.getElementById('subtitulo');
+const panelConteo   = document.getElementById('panel-conteo');
 
-Object.keys(indice).sort().forEach(prov => {
-  const group = document.createElement('optgroup');
-  group.label = prov;
-  Object.keys(indice[prov]).sort().forEach(partido => {
-    const opt = document.createElement('option');
-    opt.value = prov + '||' + partido;
-    opt.textContent = partido;
-    group.appendChild(opt);
+// Poblar zonas
+Object.keys(indice).sort().forEach(zona => {
+  const opt = document.createElement('option');
+  opt.value = zona;
+  opt.textContent = zona;
+  selectZona.appendChild(opt);
+});
+
+// Poblar partidos (filtrado por zona o todos)
+function poblarPartidos(zonaFiltro) {
+  selectPartido.innerHTML = '';
+  const zonas = zonaFiltro ? [zonaFiltro] : Object.keys(indice).sort();
+  zonas.forEach(zona => {
+    const group = document.createElement('optgroup');
+    group.label = zona;
+    Object.keys(indice[zona]).sort().forEach(partido => {
+      const opt = document.createElement('option');
+      opt.value = zona + '||' + partido;
+      opt.textContent = partido;
+      group.appendChild(opt);
+    });
+    selectPartido.appendChild(group);
   });
-  select.appendChild(group);
-});
+}
+
+poblarPartidos(''); // inicio: todos los partidos
 
 // ── Marcadores ───────────────────────────────────────────────────────────
 let markersLayer = L.layerGroup().addTo(map);
@@ -63,7 +78,7 @@ function abreviar(name) {
 function makeIcon(label, side = 'right') {
   const short = abreviar(label);
   const dot = `<div style="width:12px;height:12px;background:${COLOR};border:2px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.6);flex-shrink:0;"></div>`;
-  const lbl = `<div style="background:rgba(20,20,20,0.75);color:#fff;font-size:10px;font-family:sans-serif;font-weight:600;white-space:nowrap;padding:2px 5px;border-radius:3px;letter-spacing:0.02em;border-left:3px solid ${COLOR};">${short}</div>`;
+  const lbl = `<div style="background:rgba(20,20,20,0.75);color:#fff;font-size:10px;font-family:sans-serif;font-weight:600;white-space:normal;max-width:110px;padding:2px 5px;border-radius:3px;letter-spacing:0.02em;border-left:3px solid ${COLOR};line-height:1.3;">${short}</div>`;
 
   const dirs = {
     right:  { flex: 'row',            align: 'center', gap: '4px' },
@@ -82,47 +97,89 @@ function makeIcon(label, side = 'right') {
   });
 }
 
-// ── Mostrar partido seleccionado ──────────────────────────────────────────
-function mostrar(valor) {
+// ── Calcular lado del label según vecino más cercano ─────────────────────
+function calcularSide(lat, lng, todos) {
+  let nearestDlng = 0, nearestDlat = 0, nearestDist = Infinity;
+  todos.forEach(([plat, plng]) => {
+    const dlat = plat - lat;
+    const dlng = plng - lng;
+    const dist = Math.sqrt(dlat * dlat + dlng * dlng);
+    if (dist < 0.0001 || dist >= nearestDist) return;
+    nearestDist = dist;
+    nearestDlat = dlat;
+    nearestDlng = dlng;
+  });
+  if (nearestDist === Infinity) return 'right';
+  if (Math.abs(nearestDlng) >= Math.abs(nearestDlat)) {
+    return nearestDlng > 0 ? 'left' : 'right';
+  } else {
+    return nearestDlat > 0 ? 'bottom' : 'top';
+  }
+}
+
+// ── Mostrar selección múltiple ────────────────────────────────────────────
+function mostrar(valores) {
   markersLayer.clearLayers();
-  if (!valor) return;
+  if (!valores || valores.length === 0) {
+    subtitulo.textContent = 'Argentina · 1976–1983';
+    panelConteo.textContent = '—';
+    return;
+  }
 
-  const [prov, partido] = valor.split('||');
-  const centros = indice[prov]?.[partido];
-  if (!centros) return;
-
-  const puntos = [];
-  centros.forEach(centro => {
-    centro.lugares.forEach(lugar => {
-      if (!lugar.lat || !lugar.lng) return;
-      const marker = L.marker([lugar.lat, lugar.lng], {
-        icon: makeIcon(lugar.name, lugar.side || 'right')
+  // Primer paso: recolectar todos los puntos
+  const items = [];
+  const labels = [];
+  valores.forEach(valor => {
+    const [zona, partido] = valor.split('||');
+    const centros = indice[zona]?.[partido];
+    if (!centros) return;
+    labels.push(partido);
+    centros.forEach(centro => {
+      centro.lugares.forEach(lugar => {
+        if (!lugar.lat || !lugar.lng) return;
+        items.push({ lat: lugar.lat, lng: lugar.lng, name: lugar.name });
       });
-      markersLayer.addLayer(marker);
-      puntos.push([lugar.lat, lugar.lng]);
     });
   });
 
-  // Ajustar vista
-  if (puntos.length === 1) {
-    map.setView(puntos[0], 15);
-  } else if (puntos.length > 1) {
-    map.fitBounds(L.latLngBounds(puntos), { padding: [60, 60] });
+  const coords = items.map(i => [i.lat, i.lng]);
+
+  // Segundo paso: crear marcadores con lado calculado
+  items.forEach(item => {
+    const side = calcularSide(item.lat, item.lng, coords);
+    markersLayer.addLayer(L.marker([item.lat, item.lng], {
+      icon: makeIcon(item.name, side)
+    }));
+  });
+
+  if (coords.length === 1) {
+    map.setView(coords[0], 15);
+  } else if (coords.length > 1) {
+    map.fitBounds(L.latLngBounds(coords), { padding: [60, 60] });
   }
 
-  // Actualizar subtítulo y conteo
-  const total = puntos.length;
-  subtitulo.textContent = `${partido} · ${prov}`;
-  document.getElementById('conteo').textContent = `${total} sitio${total !== 1 ? 's' : ''}`;
+  const total = coords.length;
+  subtitulo.textContent = labels.length === 1 ? labels[0] : `${labels.length} partidos`;
+  panelConteo.textContent = `${total} sitio${total !== 1 ? 's' : ''}`;
 }
 
-select.addEventListener('change', () => mostrar(select.value));
-
-// Iniciar con el primero disponible
-if (select.options.length > 0) {
-  select.selectedIndex = 1;
-  mostrar(select.value);
+function getSeleccion() {
+  return Array.from(selectPartido.selectedOptions).map(o => o.value).filter(v => v);
 }
+
+// ── Handlers ──────────────────────────────────────────────────────────────
+selectZona.addEventListener('change', () => {
+  poblarPartidos(selectZona.value);
+  // Seleccionar todos los partidos de la zona elegida y mostrarlos
+  if (selectZona.value) {
+    Array.from(selectPartido.options).forEach(o => o.selected = true);
+    mostrar(getSeleccion());
+  } else {
+    mostrar([]);
+  }
+});
+
+selectPartido.addEventListener('change', () => mostrar(getSeleccion()));
 
 // ── Panel toggle ──────────────────────────────────────────────────────────
 document.getElementById('panel-close').addEventListener('click', () => {
