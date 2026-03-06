@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCD · Argentina</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="mapa.css" />
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="header">
+  <h1>Centros Clandestinos de Detención</h1>
+  <p id="subtitulo">Argentina · 1976–1983</p>
+</div>
+
+<div id="footer">
+  <div id="leyenda">
+    <h4>Referencias</h4>
+    <div class="leyenda-item">
+      <div class="leyenda-dot" style="background:#b22222"></div>
+      <span id="conteo">—</span>
+    </div>
+  </div>
+  <div id="fuente">
+    Fuente: RUVTE · Registro Unificado de Víctimas del Terrorismo de Estado
+  </div>
+</div>
+
+<!-- Panel selector -->
+<div id="panel">
+  <button id="panel-close" title="Ocultar">×</button>
+  <label>Partido / Área</label>
+  <select id="select-partido">
+    <option value="">— seleccioná —</option>
+  </select>
+  <div id="conteo">—</div>
+</div>
+
+<button id="panel-toggle" title="Mostrar selector">☰</button>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script>
+<script src="mapa.js"></script>
+</body>
+</html>
